@@ -1,5 +1,5 @@
 import { ChangeEvent, FormEvent, useEffect, useState } from "react";
-import { api, Attachment, Comment, Task, TaskPriority } from "../api/client";
+import { api, resolveFileUrl, Attachment, Comment, Task, TaskPriority } from "../api/client";
 
 interface Props {
   taskId: string;
@@ -166,7 +166,7 @@ export default function TaskModal({ taskId, members, onClose, onChanged }: Props
           {attachments.length === 0 && <p className="muted small">Пока нет файлов</p>}
           {attachments.map((a) => (
             <div key={a.id} className="attachment-row">
-              <a href={a.url} target="_blank" rel="noreferrer">
+              <a href={resolveFileUrl(a.url)} target="_blank" rel="noreferrer">
                 📎 {a.originalName}
               </a>
               <span className="muted small">{formatSize(a.size)}</span>

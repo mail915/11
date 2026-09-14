@@ -1,0 +1,33 @@
+# Render Blueprint — one-click deploy for the TaskFlow backend + PostgreSQL.
+#
+# On render.com: New -> Blueprint -> connect this repo -> Render reads this
+# file and provisions both resources below automatically.
+#
+# Note: uploaded task attachments are stored on the service's local disk
+# (backend/uploads). Render's free/standard instances have an ephemeral
+# filesystem, so attachments are lost on redeploy/restart unless you attach
+# a persistent Disk to the service (Render dashboard -> service -> Disks;
+# requires a paid instance type) mounted at backend/uploads.
+databases:
+  - name: taskflow-db
+    plan: free
+    postgresMajorVersion: "16"
+
+services:
+  - type: web
+    name: taskflow-backend
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install && npx prisma generate && npm run build
+    startCommand: npx prisma migrate deploy && npm start
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: taskflow-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: NODE_VERSION
+        value: 20.18.0

@@ -1,3 +1,15 @@
+// In dev, Vite's proxy forwards /api to the local backend (see vite.config.ts).
+// In production the web app is built and hosted separately from the backend
+// (e.g. Vercel + Render), so it needs the backend's absolute URL instead.
+const API_BASE_URL = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/api` : "/api";
+
+// Attachment URLs come back from the API as paths like "/uploads/xyz" (relative
+// to the backend, not the web app), so resolve them against the same origin.
+export function resolveFileUrl(url: string): string {
+  if (url.startsWith("http")) return url;
+  return import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}${url}` : url;
+}
+
 const TOKEN_KEY = "taskflow_token";
 
 export function getToken(): string | null {
@@ -25,7 +37,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const res = await fetch(`/api${path}`, { ...options, headers });
+  const res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
 
   if (res.status === 204) return undefined as T;
 
