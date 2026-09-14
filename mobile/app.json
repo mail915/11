@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "TaskFlow",
+    "slug": "taskflow",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "backgroundColor": "#0f172a"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.taskflow.app"
+    },
+    "android": {
+      "package": "com.taskflow.app"
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}

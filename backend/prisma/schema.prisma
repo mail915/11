@@ -1,0 +1,120 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TeamRole {
+  OWNER
+  MEMBER
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum NotificationType {
+  TASK_ASSIGNED
+  TASK_STATUS_CHANGED
+  NEW_COMMENT
+  ADDED_TO_TEAM
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime @default(now())
+
+  teamMemberships TeamMember[]
+  createdTasks    Task[]         @relation("TaskCreatedBy")
+  assignedTasks   Task[]         @relation("TaskAssignee")
+  comments        Comment[]
+  notifications   Notification[]
+}
+
+model Team {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
+
+  members  TeamMember[]
+  projects Project[]
+}
+
+model TeamMember {
+  id     String   @id @default(uuid())
+  team   Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  teamId String
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId String
+  role   TeamRole @default(MEMBER)
+
+  joinedAt DateTime @default(now())
+
+  @@unique([teamId, userId])
+}
+
+model Project {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  team        Team     @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  teamId      String
+  createdAt   DateTime @default(now())
+
+  tasks Task[]
+}
+
+model Task {
+  id          String       @id @default(uuid())
+  title       String
+  description String?
+  status      TaskStatus   @default(TODO)
+  priority    TaskPriority @default(MEDIUM)
+  dueDate     DateTime?
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId   String
+  assignee    User?        @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  assigneeId  String?
+  createdBy   User         @relation("TaskCreatedBy", fields: [createdById], references: [id])
+  createdById String
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  comments Comment[]
+}
+
+model Comment {
+  id        String   @id @default(uuid())
+  body      String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId    String
+  author    User     @relation(fields: [authorId], references: [id])
+  authorId  String
+  createdAt DateTime @default(now())
+}
+
+model Notification {
+  id         String            @id @default(uuid())
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  type       NotificationType
+  message    String
+  entityType String
+  entityId   String
+  read       Boolean           @default(false)
+  createdAt  DateTime          @default(now())
+}
