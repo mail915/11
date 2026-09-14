@@ -2,22 +2,23 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../db";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
-import { requireTeamMember } from "../utils/access";
+import { requireProjectMember } from "../utils/access";
+import { notify } from "../utils/notify";
 
 const router = Router();
 router.use(requireAuth);
 
 async function taskAccess(taskId: string, userId: string) {
-  const task = await prisma.task.findUnique({ where: { id: taskId }, include: { project: true } });
+  const task = await prisma.task.findUnique({ where: { id: taskId } });
   if (!task) return { task: null, membership: null };
-  const membership = await requireTeamMember(task.project.teamId, userId);
+  const membership = await requireProjectMember(task.projectId, userId);
   return { task, membership };
 }
 
 router.get("/tasks/:taskId/comments", async (req: AuthedRequest, res) => {
   const { task, membership } = await taskAccess(req.params.taskId, req.userId!);
   if (!task) return res.status(404).json({ error: "Task not found" });
-  if (!membership) return res.status(403).json({ error: "Not a member of this task's team" });
+  if (!membership) return res.status(403).json({ error: "Not a member of this task's project" });
 
   const comments = await prisma.comment.findMany({
     where: { taskId: req.params.taskId },
@@ -32,7 +33,7 @@ const createCommentSchema = z.object({ body: z.string().min(1) });
 router.post("/tasks/:taskId/comments", async (req: AuthedRequest, res) => {
   const { task, membership } = await taskAccess(req.params.taskId, req.userId!);
   if (!task) return res.status(404).json({ error: "Task not found" });
-  if (!membership) return res.status(403).json({ error: "Not a member of this task's team" });
+  if (!membership) return res.status(403).json({ error: "Not a member of this task's project" });
 
   const parsed = createCommentSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
@@ -47,15 +48,7 @@ router.post("/tasks/:taskId/comments", async (req: AuthedRequest, res) => {
   );
   await Promise.all(
     [...notifyUserIds].map((userId) =>
-      prisma.notification.create({
-        data: {
-          userId,
-          type: "NEW_COMMENT",
-          message: `New comment on "${task.title}"`,
-          entityType: "task",
-          entityId: task.id,
-        },
-      })
+      notify(userId, "NEW_COMMENT", `New comment on "${task.title}"`, "task", task.id)
     )
   );
 

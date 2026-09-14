@@ -14,7 +14,7 @@ export type RootStackParamList = {
   Register: undefined;
   Projects: undefined;
   Board: { projectId: string; projectName: string };
-  Task: { taskId: string; teamId: string };
+  Task: { taskId: string; projectId: string };
   Notifications: undefined;
 };
 

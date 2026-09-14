@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "../db";
 import { requireAuth, AuthedRequest } from "../middleware/auth";
 import { requireTeamMember } from "../utils/access";
+import { notify } from "../utils/notify";
 
 const router = Router();
 router.use(requireAuth);
@@ -60,15 +61,8 @@ router.post("/:id/members", async (req: AuthedRequest, res) => {
     data: { teamId: req.params.id, userId: user.id, role: "MEMBER" },
   });
 
-  await prisma.notification.create({
-    data: {
-      userId: user.id,
-      type: "ADDED_TO_TEAM",
-      message: `You were added to a team`,
-      entityType: "team",
-      entityId: req.params.id,
-    },
-  });
+  const team = await prisma.team.findUnique({ where: { id: req.params.id } });
+  await notify(user.id, "ADDED_TO_TEAM", `You were added to team "${team?.name}"`, "team", req.params.id);
 
   res.status(201).json(newMember);
 });

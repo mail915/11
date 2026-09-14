@@ -1,8 +1,10 @@
 import { useCallback, useState } from "react";
-import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert } from "react-native";
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, Alert, Linking } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { api, Comment, Task, TaskPriority } from "../api/client";
+import * as DocumentPicker from "expo-document-picker";
+import { api, Attachment, Comment, Task, TaskPriority } from "../api/client";
+import { resolveFileUrl } from "../api/config";
 import { colors } from "../theme";
 import { RootStackParamList } from "../navigation";
 
@@ -17,22 +19,26 @@ const PRIORITIES: TaskPriority[] = ["LOW", "MEDIUM", "HIGH"];
 const PRIORITY_LABELS: Record<TaskPriority, string> = { LOW: "Низкий", MEDIUM: "Средний", HIGH: "Высокий" };
 
 export default function TaskScreen({ route, navigation }: Props) {
-  const { taskId, teamId } = route.params;
+  const { taskId, projectId } = route.params;
   const [task, setTask] = useState<Task | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [description, setDescription] = useState("");
   const [newComment, setNewComment] = useState("");
+  const [uploading, setUploading] = useState(false);
 
   async function load() {
-    const [t, c, m] = await Promise.all([
+    const [t, c, a, m] = await Promise.all([
       api.get<Task>(`/tasks/${taskId}`),
       api.get<Comment[]>(`/tasks/${taskId}/comments`),
-      teamId ? api.get<Member[]>(`/teams/${teamId}/members`) : Promise.resolve([] as Member[]),
+      api.get<Attachment[]>(`/tasks/${taskId}/attachments`),
+      projectId ? api.get<Member[]>(`/projects/${projectId}/members`) : Promise.resolve([] as Member[]),
     ]);
     setTask(t);
     setDescription(t.description ?? "");
     setComments(c);
+    setAttachments(a);
     setMembers(m);
   }
 
@@ -64,6 +70,30 @@ export default function TaskScreen({ route, navigation }: Props) {
     load();
   }
 
+  async function pickAndUploadFile() {
+    const result = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: true });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    setUploading(true);
+    try {
+      await api.upload(`/tasks/${taskId}/attachments`, {
+        uri: asset.uri,
+        name: asset.name,
+        mimeType: asset.mimeType,
+      });
+      load();
+    } catch (err) {
+      Alert.alert("Не удалось загрузить файл");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function removeAttachment(id: string) {
+    await api.del(`/attachments/${id}`);
+    load();
+  }
+
   async function remove() {
     Alert.alert("Удалить задачу?", undefined, [
       { text: "Отмена", style: "cancel" },
@@ -80,9 +110,19 @@ export default function TaskScreen({ route, navigation }: Props) {
 
   if (!task) return null;
 
+  const delegatedFromMember = task.delegatedById ? members.find((m) => m.userId === task.delegatedById) : undefined;
+
   return (
     <ScrollView style={styles.screen} contentContainerStyle={{ gap: 14, padding: 16 }}>
       <Text style={styles.title}>{task.title}</Text>
+
+      {task.delegatedById && (
+        <View style={styles.delegationBanner}>
+          <Text style={styles.delegationText}>
+            ↪ Делегировано{delegatedFromMember ? ` от ${delegatedFromMember.user.name}` : ""}
+          </Text>
+        </View>
+      )}
 
       <Text style={styles.label}>Описание</Text>
       <TextInput
@@ -108,7 +148,7 @@ export default function TaskScreen({ route, navigation }: Props) {
         ))}
       </View>
 
-      <Text style={styles.label}>Исполнитель</Text>
+      <Text style={styles.label}>Исполнитель {task.assigneeId ? "(смена = делегирование)" : ""}</Text>
       <View style={styles.chipRow}>
         <TouchableOpacity
           style={[styles.chip, !task.assigneeId && styles.chipActive]}
@@ -126,6 +166,21 @@ export default function TaskScreen({ route, navigation }: Props) {
           </TouchableOpacity>
         ))}
       </View>
+
+      <Text style={styles.label}>Вложения</Text>
+      {attachments.map((a) => (
+        <View key={a.id} style={styles.attachmentRow}>
+          <TouchableOpacity style={{ flex: 1 }} onPress={() => Linking.openURL(resolveFileUrl(a.url))}>
+            <Text style={styles.attachmentName}>📎 {a.originalName}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => removeAttachment(a.id)}>
+            <Text style={styles.removeLink}>Удалить</Text>
+          </TouchableOpacity>
+        </View>
+      ))}
+      <TouchableOpacity style={styles.attachButton} onPress={pickAndUploadFile} disabled={uploading}>
+        <Text style={styles.attachButtonText}>{uploading ? "Загрузка…" : "+ Прикрепить файл"}</Text>
+      </TouchableOpacity>
 
       <Text style={styles.label}>Комментарии</Text>
       {comments.map((c) => (
@@ -160,6 +215,8 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   title: { color: colors.text, fontSize: 20, fontWeight: "700" },
   label: { color: colors.muted, fontSize: 13 },
+  delegationBanner: { backgroundColor: "rgba(14, 165, 233, 0.15)", borderRadius: 6, padding: 8 },
+  delegationText: { color: "#7dd3fc", fontSize: 13 },
   textArea: {
     backgroundColor: colors.panel2,
     borderColor: colors.border,
@@ -191,4 +248,15 @@ const styles = StyleSheet.create({
   button: { backgroundColor: colors.accent, borderRadius: 8, paddingHorizontal: 14, justifyContent: "center" },
   buttonText: { color: "white", fontWeight: "600" },
   deleteButton: { backgroundColor: colors.danger, borderRadius: 8, padding: 12, alignItems: "center", marginTop: 8 },
+  attachmentRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.panel2,
+    borderRadius: 8,
+    padding: 8,
+  },
+  attachmentName: { color: colors.text, fontSize: 13 },
+  removeLink: { color: colors.danger, fontSize: 12 },
+  attachButton: { backgroundColor: colors.panel2, borderRadius: 8, padding: 10, alignItems: "center", borderWidth: 1, borderColor: colors.border },
+  attachButtonText: { color: colors.accent, fontSize: 13 },
 });

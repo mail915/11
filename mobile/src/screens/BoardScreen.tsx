@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { api, Project, Task, TaskStatus } from "../api/client";
+import { api, Task, TaskStatus } from "../api/client";
 import { colors } from "../theme";
 import { RootStackParamList } from "../navigation";
 
@@ -16,13 +16,10 @@ const COLUMNS: { status: TaskStatus; label: string }[] = [
 
 export default function BoardScreen({ route, navigation }: Props) {
   const { projectId } = route.params;
-  const [project, setProject] = useState<Project | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [newTitle, setNewTitle] = useState("");
 
   async function load() {
-    const proj = await api.get<Project>(`/projects/${projectId}`);
-    setProject(proj);
     const taskList = await api.get<Task[]>(`/projects/${projectId}/tasks`);
     setTasks(taskList);
   }
@@ -71,10 +68,11 @@ export default function BoardScreen({ route, navigation }: Props) {
                 <TouchableOpacity
                   key={t.id}
                   style={[styles.taskCard, { borderLeftColor: priorityColor(t.priority) }]}
-                  onPress={() => navigation.navigate("Task", { taskId: t.id, teamId: project?.teamId ?? "" })}
+                  onPress={() => navigation.navigate("Task", { taskId: t.id, projectId })}
                 >
                   <Text style={styles.taskTitle}>{t.title}</Text>
                   {t.assignee && <Text style={styles.muted}>👤 {t.assignee.name}</Text>}
+                  {t.delegatedById && <Text style={styles.muted}>↪ делегировано</Text>}
                   <View style={styles.switchRow}>
                     {COLUMNS.filter((c) => c.status !== t.status).map((c) => (
                       <TouchableOpacity key={c.status} style={styles.switchButton} onPress={() => moveTask(t.id, c.status)}>

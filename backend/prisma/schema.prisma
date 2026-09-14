@@ -3,12 +3,19 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 
 enum TeamRole {
   OWNER
+  MEMBER
+}
+
+enum ProjectRole {
+  OWNER
+  ADMIN
   MEMBER
 }
 
@@ -26,9 +33,12 @@ enum TaskPriority {
 
 enum NotificationType {
   TASK_ASSIGNED
+  TASK_DELEGATED
   TASK_STATUS_CHANGED
   NEW_COMMENT
+  NEW_ATTACHMENT
   ADDED_TO_TEAM
+  ADDED_TO_PROJECT
 }
 
 model User {
@@ -38,11 +48,15 @@ model User {
   name         String
   createdAt    DateTime @default(now())
 
-  teamMemberships TeamMember[]
-  createdTasks    Task[]         @relation("TaskCreatedBy")
-  assignedTasks   Task[]         @relation("TaskAssignee")
-  comments        Comment[]
-  notifications   Notification[]
+  teamMemberships    TeamMember[]
+  projectMemberships ProjectMember[]
+  createdTasks       Task[]          @relation("TaskCreatedBy")
+  assignedTasks      Task[]          @relation("TaskAssignee")
+  delegatedTasks     Task[]          @relation("TaskDelegatedBy")
+  comments           Comment[]
+  attachments        Attachment[]
+  notifications      Notification[]
+  pushTokens         PushToken[]
 }
 
 model Team {
@@ -75,26 +89,44 @@ model Project {
   teamId      String
   createdAt   DateTime @default(now())
 
-  tasks Task[]
+  members ProjectMember[]
+  tasks   Task[]
+}
+
+model ProjectMember {
+  id        String      @id @default(uuid())
+  project   Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  role      ProjectRole @default(MEMBER)
+
+  joinedAt DateTime @default(now())
+
+  @@unique([projectId, userId])
 }
 
 model Task {
-  id          String       @id @default(uuid())
-  title       String
-  description String?
-  status      TaskStatus   @default(TODO)
-  priority    TaskPriority @default(MEDIUM)
-  dueDate     DateTime?
-  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  projectId   String
-  assignee    User?        @relation("TaskAssignee", fields: [assigneeId], references: [id])
-  assigneeId  String?
-  createdBy   User         @relation("TaskCreatedBy", fields: [createdById], references: [id])
-  createdById String
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id            String       @id @default(uuid())
+  title         String
+  description   String?
+  status        TaskStatus   @default(TODO)
+  priority      TaskPriority @default(MEDIUM)
+  startDate     DateTime?
+  dueDate       DateTime?
+  project       Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId     String
+  assignee      User?        @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  assigneeId    String?
+  delegatedBy   User?        @relation("TaskDelegatedBy", fields: [delegatedById], references: [id])
+  delegatedById String?
+  createdBy     User         @relation("TaskCreatedBy", fields: [createdById], references: [id])
+  createdById   String
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
 
-  comments Comment[]
+  comments    Comment[]
+  attachments Attachment[]
 }
 
 model Comment {
@@ -107,14 +139,37 @@ model Comment {
   createdAt DateTime @default(now())
 }
 
+model Attachment {
+  id           String   @id @default(uuid())
+  task         Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskId       String
+  uploader     User     @relation(fields: [uploaderId], references: [id])
+  uploaderId   String
+  filename     String
+  originalName String
+  mimeType     String
+  size         Int
+  url          String
+  createdAt    DateTime @default(now())
+}
+
+model PushToken {
+  id        String   @id @default(uuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  token     String   @unique
+  platform  String?
+  createdAt DateTime @default(now())
+}
+
 model Notification {
-  id         String            @id @default(uuid())
-  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id         String           @id @default(uuid())
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId     String
   type       NotificationType
   message    String
   entityType String
   entityId   String
-  read       Boolean           @default(false)
-  createdAt  DateTime          @default(now())
+  read       Boolean          @default(false)
+  createdAt  DateTime         @default(now())
 }

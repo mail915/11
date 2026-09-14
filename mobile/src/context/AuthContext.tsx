@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { api, getToken, setToken, User } from "../api/client";
+import { registerForPushNotifications } from "../push";
 
 interface AuthContextValue {
   user: User | null;
@@ -25,6 +26,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const me = await api.get<User>("/auth/me");
         setUser(me);
+        registerForPushNotifications();
       } catch {
         await setToken(null);
       } finally {
@@ -37,6 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const data = await api.post<{ token: string; user: User }>("/auth/login", { email, password });
     await setToken(data.token);
     setUser(data.user);
+    registerForPushNotifications();
   }
 
   async function register(email: string, password: string, name: string) {
@@ -47,6 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     await setToken(data.token);
     setUser(data.user);
+    registerForPushNotifications();
   }
 
   async function logout() {

@@ -23,7 +23,7 @@ export class ApiError extends Error {
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = await getToken();
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    ...(options.body && !(options.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
     ...(options.headers as Record<string, string> | undefined),
   };
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -51,6 +51,12 @@ export const api = {
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
   del: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  upload: <T>(path: string, file: { uri: string; name: string; mimeType?: string | null }) => {
+    const form = new FormData();
+    // React Native's fetch accepts this shape for multipart file parts.
+    form.append("file", { uri: file.uri, name: file.name, type: file.mimeType || "application/octet-stream" } as any);
+    return request<T>(path, { method: "POST", body: form });
+  },
 };
 
 export interface User {
@@ -65,12 +71,21 @@ export interface Team {
   role: "OWNER" | "MEMBER";
 }
 
+export type ProjectRole = "OWNER" | "ADMIN" | "MEMBER";
+
 export interface Project {
   id: string;
   name: string;
   description?: string | null;
   teamId: string;
   createdAt: string;
+  myRole?: ProjectRole;
+}
+
+export interface ProjectMember {
+  userId: string;
+  role: ProjectRole;
+  user: { id: string; name: string; email: string };
 }
 
 export type TaskStatus = "TODO" | "IN_PROGRESS" | "DONE";
@@ -82,10 +97,12 @@ export interface Task {
   description?: string | null;
   status: TaskStatus;
   priority: TaskPriority;
+  startDate?: string | null;
   dueDate?: string | null;
   projectId: string;
   assigneeId?: string | null;
   assignee?: { id: string; name: string; email: string } | null;
+  delegatedById?: string | null;
   createdById: string;
   createdAt: string;
   updatedAt: string;
@@ -97,6 +114,18 @@ export interface Comment {
   taskId: string;
   authorId: string;
   author: { id: string; name: string; email: string };
+  createdAt: string;
+}
+
+export interface Attachment {
+  id: string;
+  taskId: string;
+  uploaderId: string;
+  uploader: { id: string; name: string; email: string };
+  originalName: string;
+  mimeType: string;
+  size: number;
+  url: string;
   createdAt: string;
 }
 

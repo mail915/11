@@ -1,5 +1,5 @@
-import { FormEvent, useEffect, useState } from "react";
-import { api, Comment, Task, TaskPriority } from "../api/client";
+import { ChangeEvent, FormEvent, useEffect, useState } from "react";
+import { api, Attachment, Comment, Task, TaskPriority } from "../api/client";
 
 interface Props {
   taskId: string;
@@ -11,17 +11,21 @@ interface Props {
 export default function TaskModal({ taskId, members, onClose, onChanged }: Props) {
   const [task, setTask] = useState<Task | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [newComment, setNewComment] = useState("");
   const [description, setDescription] = useState("");
+  const [uploading, setUploading] = useState(false);
 
   async function load() {
-    const [t, c] = await Promise.all([
+    const [t, c, a] = await Promise.all([
       api.get<Task>(`/tasks/${taskId}`),
       api.get<Comment[]>(`/tasks/${taskId}/comments`),
+      api.get<Attachment[]>(`/tasks/${taskId}/attachments`),
     ]);
     setTask(t);
     setDescription(t.description ?? "");
     setComments(c);
+    setAttachments(a);
   }
 
   useEffect(() => {
@@ -29,7 +33,7 @@ export default function TaskModal({ taskId, members, onClose, onChanged }: Props
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId]);
 
-  async function update(fields: Partial<Pick<Task, "priority" | "assigneeId" | "dueDate">>) {
+  async function update(fields: Partial<Pick<Task, "priority" | "assigneeId" | "startDate" | "dueDate">>) {
     await api.patch(`/tasks/${taskId}`, fields);
     load();
     onChanged();
@@ -48,6 +52,25 @@ export default function TaskModal({ taskId, members, onClose, onChanged }: Props
     load();
   }
 
+  async function onPickFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploading(true);
+    try {
+      await api.upload(`/tasks/${taskId}/attachments`, file);
+      load();
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function removeAttachment(id: string) {
+    if (!confirm("Удалить файл?")) return;
+    await api.del(`/attachments/${id}`);
+    load();
+  }
+
   async function remove() {
     if (!confirm("Удалить задачу?")) return;
     await api.del(`/tasks/${taskId}`);
@@ -56,6 +79,8 @@ export default function TaskModal({ taskId, members, onClose, onChanged }: Props
   }
 
   if (!task) return null;
+
+  const delegatedFromMember = task.delegatedById ? members.find((m) => m.id === task.delegatedById) : undefined;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -66,6 +91,12 @@ export default function TaskModal({ taskId, members, onClose, onChanged }: Props
             ✕
           </button>
         </div>
+
+        {task.delegatedById && (
+          <div className="delegation-banner">
+            ↪ Делегировано{delegatedFromMember ? ` от ${delegatedFromMember.name}` : ""}
+          </div>
+        )}
 
         <label>
           Описание
@@ -91,7 +122,7 @@ export default function TaskModal({ taskId, members, onClose, onChanged }: Props
           </label>
 
           <label>
-            Исполнитель
+            Исполнитель {task.assigneeId ? "(смена = делегирование)" : ""}
             <select
               value={task.assigneeId ?? ""}
               onChange={(e) => update({ assigneeId: e.target.value || null })}
@@ -104,6 +135,19 @@ export default function TaskModal({ taskId, members, onClose, onChanged }: Props
               ))}
             </select>
           </label>
+        </div>
+
+        <div className="field-row">
+          <label>
+            Начало
+            <input
+              type="date"
+              value={task.startDate ? task.startDate.slice(0, 10) : ""}
+              onChange={(e) =>
+                update({ startDate: e.target.value ? new Date(e.target.value).toISOString() : null })
+              }
+            />
+          </label>
 
           <label>
             Дедлайн
@@ -114,6 +158,26 @@ export default function TaskModal({ taskId, members, onClose, onChanged }: Props
                 update({ dueDate: e.target.value ? new Date(e.target.value).toISOString() : null })
               }
             />
+          </label>
+        </div>
+
+        <div className="attachments-section">
+          <h4>Вложения</h4>
+          {attachments.length === 0 && <p className="muted small">Пока нет файлов</p>}
+          {attachments.map((a) => (
+            <div key={a.id} className="attachment-row">
+              <a href={a.url} target="_blank" rel="noreferrer">
+                📎 {a.originalName}
+              </a>
+              <span className="muted small">{formatSize(a.size)}</span>
+              <button className="link-button" onClick={() => removeAttachment(a.id)}>
+                Удалить
+              </button>
+            </div>
+          ))}
+          <label className="file-upload-label">
+            {uploading ? "Загрузка…" : "+ Прикрепить файл"}
+            <input type="file" onChange={onPickFile} disabled={uploading} hidden />
           </label>
         </div>
 
@@ -142,4 +206,10 @@ export default function TaskModal({ taskId, members, onClose, onChanged }: Props
       </div>
     </div>
   );
+}
+
+function formatSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} Б`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
 }
